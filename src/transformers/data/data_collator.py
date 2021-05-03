@@ -520,12 +520,13 @@ class DataCollatorForSOP(DataCollatorForLanguageModeling):
     - preprocesses batches for both masked language modeling and sentence order prediction
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, tokenizer, *args, **kwargs):
         warnings.warn(
             "DataCollatorForSOP is deprecated and will be removed in a future version, you can now use "
             "DataCollatorForLanguageModeling instead.",
             FutureWarning,
         )
+        self.tokenizer = tokenizer
 
     def __call__(self, examples: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
         input_ids = [example["input_ids"] for example in examples]
