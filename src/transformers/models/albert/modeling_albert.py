@@ -71,7 +71,7 @@ ALBERT_PRETRAINED_MODEL_ARCHIVE_LIST = [
 
 
 def load_tf_weights_in_albert(model, config, tf_checkpoint_path):
-    """Load tf checkpoints in a pytorch model."""
+    """ Load tf checkpoints in a pytorch model."""
     try:
         import re
 
@@ -538,6 +538,7 @@ class AlbertForPreTrainingOutput(ModelOutput):
     sop_logits: torch.FloatTensor = None
     hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     attentions: Optional[Tuple[torch.FloatTensor]] = None
+    seq_relationship_logits: torch.FloatTensor = None
 
 
 ALBERT_START_DOCSTRING = r"""
@@ -728,6 +729,19 @@ class AlbertModel(AlbertPreTrainedModel):
             attentions=encoder_outputs.attentions,
         )
 
+#######################################################################################################################
+#######################################################################################################################
+######################################class AlbertForPreTraining wurde verändert#######################################
+#######################################################################################################################
+#######################################################################################################################
+class AlbertNSPHead(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.seq_relationship = nn.Linear(config.hidden_size, 2)
+
+    def forward(self, pooled_output):
+        seq_relationship_score = self.seq_relationship(pooled_output)
+        return seq_relationship_score
 
 @add_start_docstrings(
     """
@@ -744,7 +758,11 @@ class AlbertForPreTraining(AlbertPreTrainedModel):
         self.predictions = AlbertMLMHead(config)
         self.sop_classifier = AlbertSOPHead(config)
 
+        self.seq_relationship_score = AlbertNSPHead(config)
+
         self.init_weights()
+        self.help_loss = config.help_loss_function
+
 
     def get_output_embeddings(self):
         return self.predictions.decoder
@@ -770,6 +788,8 @@ class AlbertForPreTraining(AlbertPreTrainedModel):
         output_attentions=None,
         output_hidden_states=None,
         return_dict=None,
+
+        next_sentence_label=None,
     ):
         r"""
         labels (``torch.LongTensor`` of shape ``(batch_size, sequence_length)``, `optional`):
@@ -798,44 +818,92 @@ class AlbertForPreTraining(AlbertPreTrainedModel):
             >>> sop_logits = outputs.sop_logits
 
         """
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        if self.help_loss == "SOP":
+            return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        outputs = self.albert(
-            input_ids,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
-            position_ids=position_ids,
-            head_mask=head_mask,
-            inputs_embeds=inputs_embeds,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
+            outputs = self.albert(
+                input_ids,
+                attention_mask=attention_mask,
+                token_type_ids=token_type_ids,
+                position_ids=position_ids,
+                head_mask=head_mask,
+                inputs_embeds=inputs_embeds,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+            )
 
-        sequence_output, pooled_output = outputs[:2]
+            sequence_output, pooled_output = outputs[:2]
 
-        prediction_scores = self.predictions(sequence_output)
-        sop_scores = self.sop_classifier(pooled_output)
+            prediction_scores = self.predictions(sequence_output)
+            sop_scores = self.sop_classifier(pooled_output)
 
-        total_loss = None
-        if labels is not None and sentence_order_label is not None:
-            loss_fct = CrossEntropyLoss()
-            masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
-            sentence_order_loss = loss_fct(sop_scores.view(-1, 2), sentence_order_label.view(-1))
-            total_loss = masked_lm_loss + sentence_order_loss
+            total_loss = None
+            if labels is not None and sentence_order_label is not None:
+                loss_fct = CrossEntropyLoss()
+                masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
+                sentence_order_loss = loss_fct(sop_scores.view(-1, 2), sentence_order_label.view(-1))
+                total_loss = masked_lm_loss + sentence_order_loss
 
-        if not return_dict:
-            output = (prediction_scores, sop_scores) + outputs[2:]
-            return ((total_loss,) + output) if total_loss is not None else output
+            if not return_dict:
+                output = (prediction_scores, sop_scores) + outputs[2:]
+                return ((total_loss,) + output) if total_loss is not None else output
 
-        return AlbertForPreTrainingOutput(
-            loss=total_loss,
-            prediction_logits=prediction_scores,
-            sop_logits=sop_scores,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
-        )
+            return AlbertForPreTrainingOutput(
+                loss=total_loss,
+                prediction_logits=prediction_scores,
+                sop_logits=sop_scores,
+                hidden_states=outputs.hidden_states,
+                attentions=outputs.attentions,
+            )
+        elif self.help_loss == "NSP":
+            return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
+            outputs = self.albert(
+                input_ids,
+                attention_mask=attention_mask,
+                token_type_ids=token_type_ids,
+                position_ids=position_ids,
+                head_mask=head_mask,
+                inputs_embeds=inputs_embeds,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+            )
+
+            sequence_output, pooled_output = outputs[:2]
+
+            prediction_scores = self.predictions(sequence_output)
+            seq_relationship_score = self.seq_relationship_score(pooled_output)
+
+            total_loss = None
+            if labels is not None and next_sentence_label is not None:
+                loss_fct = CrossEntropyLoss()
+                masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
+                next_sentence_label = loss_fct(seq_relationship_score.view(-1, 2), next_sentence_label.view(-1))
+                total_loss = masked_lm_loss + next_sentence_label
+
+            if not return_dict:
+                output = (prediction_scores, seq_relationship_score) + outputs[2:]
+                return ((total_loss,) + output) if total_loss is not None else output
+
+            return AlbertForPreTrainingOutput(
+                loss=total_loss,
+                prediction_logits=prediction_scores,
+                hidden_states=outputs.hidden_states,
+                attentions=outputs.attentions,
+                seq_relationship_logits=seq_relationship_score,
+            )
+
+        else:
+            raise ValueError("Wrong value for AlbertForPreTraining.help_loss. Must be 'NSP' or 'SOP'. "
+                             "Set the help_loss_function-Value in config.json")
+
+#######################################################################################################################
+#######################################################################################################################
+######################################class AlbertForPreTraining wurde verändert#######################################
+#######################################################################################################################
+#######################################################################################################################
 
 class AlbertMLMHead(nn.Module):
     def __init__(self, config):
