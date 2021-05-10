@@ -442,6 +442,7 @@ class TextDatasetForNextSentencePrediction(Dataset):
         i = 0
 
         while i < len(document):
+            print("Bearbeitet: " + str(i) + "   Von: " + str(len(document)))
             segment = document[i]
             current_chunk.append(segment)
             current_length += len(segment)
