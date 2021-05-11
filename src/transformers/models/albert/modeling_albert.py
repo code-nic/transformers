@@ -758,11 +758,9 @@ class AlbertForPreTraining(AlbertPreTrainedModel):
         self.predictions = AlbertMLMHead(config)
         self.sop_classifier = AlbertSOPHead(config)
 
-        self.seq_relationship_score = AlbertNSPHead(config)
-
         self.init_weights()
         self.help_loss = config.help_loss_function
-
+        self.config = config
 
     def get_output_embeddings(self):
         return self.predictions.decoder
@@ -857,6 +855,8 @@ class AlbertForPreTraining(AlbertPreTrainedModel):
                 attentions=outputs.attentions,
             )
         elif self.help_loss == "NSP":
+            seq_relationship_score = AlbertNSPHead(self.config)
+
             return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
             outputs = self.albert(
@@ -874,7 +874,7 @@ class AlbertForPreTraining(AlbertPreTrainedModel):
             sequence_output, pooled_output = outputs[:2]
 
             prediction_scores = self.predictions(sequence_output)
-            seq_relationship_score = self.seq_relationship_score(pooled_output)
+            seq_relationship_score = seq_relationship_score(pooled_output)
 
             total_loss = None
             if labels is not None and next_sentence_label is not None:
