@@ -1027,12 +1027,9 @@ class BertForPreTraining(BertPreTrainedModel):
         self.bert = BertModel(config)
         self.cls = BertPreTrainingHeads(config)
 
-        self.predictions = BertOnlyMLMHead(config)
-        self.sop_classifier = BertSOPHead(config)
-
         self.init_weights()
         self.help_loss = config.help_loss_function
-
+        self.config = config
 
     def get_output_embeddings(self):
         return self.cls.predictions.decoder
@@ -1127,6 +1124,9 @@ class BertForPreTraining(BertPreTrainedModel):
 
 
         elif self.help_loss == "SOP":
+            predictions = BertOnlyMLMHead(self.config)
+            sop_classifier = BertSOPHead(self.config)
+
             return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
             outputs = self.bert(
@@ -1143,8 +1143,8 @@ class BertForPreTraining(BertPreTrainedModel):
 
             sequence_output, pooled_output = outputs[:2]
 
-            prediction_scores = self.predictions(sequence_output)
-            sop_scores = self.sop_classifier(pooled_output)
+            prediction_scores = predictions(sequence_output)
+            sop_scores = sop_classifier(pooled_output)
 
             total_loss = None
             if labels is not None and sentence_order_label is not None:
