@@ -399,8 +399,8 @@ class TextDatasetForNextSentencePrediction(Dataset):
                 with open(file_path, encoding="utf-8") as f:
                     xxx = 0
                     while True:
+                        xxx = xxx + 1
                         if xxx % 1000 == 0:
-                            xxx = xxx + 1
                             print(str(xxx))
                         line = f.readline()
                         if not line:
