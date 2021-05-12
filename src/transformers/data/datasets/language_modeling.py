@@ -399,7 +399,7 @@ class TextDatasetForNextSentencePrediction(Dataset):
                 with open(file_path, encoding="utf-8") as f:
                     xxx = 0
                     while True:
-                        if xxx % 100 == 0:
+                        if xxx % 1000 == 0:
                             xxx = xxx + 1
                             print(str(xxx))
                         line = f.readline()
@@ -426,7 +426,11 @@ class TextDatasetForNextSentencePrediction(Dataset):
 
                 logger.info(f"Creating examples from {len(self.documents)} documents.")
                 self.examples = []
+                xyz = 0
                 for doc_index, document in enumerate(self.documents):
+                    xyz += 1
+                    if xyz % 100 == 0:
+                        print("for_doc xyz:" + str(xyz) + "  von: " + str(len(self.documents)))
                     self.create_examples_from_document(document, doc_index)
                 start = time.time()
                 with open(cached_features_file, "wb") as handle:
