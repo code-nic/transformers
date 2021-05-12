@@ -53,7 +53,7 @@ class TextDataset(Dataset):
     ):
         warnings.warn(
             DEPRECATION_WARNING.format(
-                "https://github.com/huggingface/transformers/blob/master/examples/pytorch/language-modeling/run_mlm.py"
+                "https://github.com/huggingface/transformers/blob/master/examples/language-modeling/run_mlm.py"
             ),
             FutureWarning,
         )
@@ -119,7 +119,7 @@ class LineByLineTextDataset(Dataset):
     def __init__(self, tokenizer: PreTrainedTokenizer, file_path: str, block_size: int):
         warnings.warn(
             DEPRECATION_WARNING.format(
-                "https://github.com/huggingface/transformers/blob/master/examples/pytorch/language-modeling/run_mlm.py"
+                "https://github.com/huggingface/transformers/blob/master/examples/language-modeling/run_mlm.py"
             ),
             FutureWarning,
         )
@@ -151,7 +151,7 @@ class LineByLineWithRefDataset(Dataset):
     def __init__(self, tokenizer: PreTrainedTokenizer, file_path: str, block_size: int, ref_path: str):
         warnings.warn(
             DEPRECATION_WARNING.format(
-                "https://github.com/huggingface/transformers/blob/master/examples/pytorch/language-modeling/run_mlm_wwm.py"
+                "https://github.com/huggingface/transformers/blob/master/examples/language-modeling/run_mlm_wwm.py"
             ),
             FutureWarning,
         )
@@ -193,7 +193,7 @@ class LineByLineWithSOPTextDataset(Dataset):
     def __init__(self, tokenizer: PreTrainedTokenizer, file_dir: str, block_size: int):
         warnings.warn(
             DEPRECATION_WARNING.format(
-                "https://github.com/huggingface/transformers/blob/master/examples/pytorch/language-modeling/run_mlm.py"
+                "https://github.com/huggingface/transformers/blob/master/examples/language-modeling/run_mlm.py"
             ),
             FutureWarning,
         )
@@ -348,12 +348,13 @@ class TextDatasetForNextSentencePrediction(Dataset):
     ):
         warnings.warn(
             DEPRECATION_WARNING.format(
-                "https://github.com/huggingface/transformers/blob/master/examples/pytorch/language-modeling/run_mlm.py"
+                "https://github.com/huggingface/transformers/blob/master/examples/language-modeling/run_mlm.py"
             ),
             FutureWarning,
         )
         assert os.path.isfile(file_path), f"Input file path {file_path} not found"
 
+        self.block_size = block_size - tokenizer.num_special_tokens_to_add(pair=True)
         self.short_seq_probability = short_seq_probability
         self.nsp_probability = nsp_probability
 
@@ -383,6 +384,7 @@ class TextDatasetForNextSentencePrediction(Dataset):
         # A new document.
 
         with FileLock(lock_path):
+            print("hier 1")
             if os.path.exists(cached_features_file) and not overwrite_cache:
                 start = time.time()
                 with open(cached_features_file, "rb") as handle:
@@ -395,7 +397,11 @@ class TextDatasetForNextSentencePrediction(Dataset):
 
                 self.documents = [[]]
                 with open(file_path, encoding="utf-8") as f:
+                    xxx = 0
                     while True:
+                        if xxx % 100 == 0:
+                            xxx = xxx + 1
+                            print(str(xxx))
                         line = f.readline()
                         if not line:
                             break
@@ -406,14 +412,22 @@ class TextDatasetForNextSentencePrediction(Dataset):
                             self.documents.append([])
                         tokens = tokenizer.tokenize(line)
                         tokens = tokenizer.convert_tokens_to_ids(tokens)
+
+                        """block_size_half = int(block_size/2 -1)
+                        while len(tokens) > block_size_half:
+                            if tokens:
+                                self.documents[-1].append(tokens[:block_size_half])
+                            tokens = tokens[block_size_half:]
+                        if tokens:
+                            self.documents[-1].append(tokens)"""
+
                         if tokens:
                             self.documents[-1].append(tokens)
 
                 logger.info(f"Creating examples from {len(self.documents)} documents.")
                 self.examples = []
                 for doc_index, document in enumerate(self.documents):
-                    self.create_examples_from_document(document, doc_index, block_size)
-
+                    self.create_examples_from_document(document, doc_index)
                 start = time.time()
                 with open(cached_features_file, "wb") as handle:
                     pickle.dump(self.examples, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -421,10 +435,10 @@ class TextDatasetForNextSentencePrediction(Dataset):
                     f"Saving features into cached file {cached_features_file} [took {time.time() - start:.3f} s]"
                 )
 
-    def create_examples_from_document(self, document: List[List[int]], doc_index: int, block_size: int):
+    def create_examples_from_document(self, document: List[List[int]], doc_index: int):
         """Creates examples for a single document."""
 
-        max_num_tokens = block_size - self.tokenizer.num_special_tokens_to_add(pair=True)
+        max_num_tokens = self.block_size - self.tokenizer.num_special_tokens_to_add(pair=True)
 
         # We *usually* want to fill up the entire sequence since we are padding
         # to `block_size` anyways, so short sequences are generally wasted
@@ -440,7 +454,6 @@ class TextDatasetForNextSentencePrediction(Dataset):
         current_chunk = []  # a buffer stored current working segments
         current_length = 0
         i = 0
-
         while i < len(document):
             segment = document[i]
             current_chunk.append(segment)
@@ -488,6 +501,22 @@ class TextDatasetForNextSentencePrediction(Dataset):
                         for j in range(a_end, len(current_chunk)):
                             tokens_b.extend(current_chunk[j])
 
+                    def truncate_seq_pair(tokens_a, tokens_b, max_num_tokens):
+                        """Truncates a pair of sequences to a maximum sequence length."""
+                        while True:
+                            total_length = len(tokens_a) + len(tokens_b)
+                            if total_length <= max_num_tokens:
+                                break
+                            trunc_tokens = tokens_a if len(tokens_a) > len(tokens_b) else tokens_b
+                            assert len(trunc_tokens) >= 1
+                            # We want to sometimes truncate from the front and sometimes from the
+                            # back to add more randomness and avoid biases.
+                            if random.random() < 0.5:
+                                del trunc_tokens[0]
+                            else:
+                                trunc_tokens.pop()
+
+                    truncate_seq_pair(tokens_a, tokens_b, max_num_tokens)
                     assert len(tokens_a) >= 1
                     assert len(tokens_b) >= 1
 
