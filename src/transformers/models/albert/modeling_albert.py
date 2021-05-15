@@ -756,11 +756,9 @@ class AlbertForPreTraining(AlbertPreTrainedModel):
 
         self.albert = AlbertModel(config)
         self.predictions = AlbertMLMHead(config)
-        self.sop_classifier = AlbertSOPHead(config)
-
+        self.help_loss_head = AlbertSOPHead(config) if config.help_loss_function == "SOP" else AlbertNSPHead(config)
         self.init_weights()
         self.help_loss = config.help_loss_function
-        self.config = config
 
     def get_output_embeddings(self):
         return self.predictions.decoder
@@ -834,7 +832,7 @@ class AlbertForPreTraining(AlbertPreTrainedModel):
             sequence_output, pooled_output = outputs[:2]
 
             prediction_scores = self.predictions(sequence_output)
-            sop_scores = self.sop_classifier(pooled_output)
+            sop_scores = self.help_loss_head(pooled_output)
 
             total_loss = None
             if labels is not None and sentence_order_label is not None:
@@ -855,7 +853,7 @@ class AlbertForPreTraining(AlbertPreTrainedModel):
                 attentions=outputs.attentions,
             )
         elif self.help_loss == "NSP":
-            seq_relationship_score = AlbertNSPHead(self.config)
+
 
             return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
@@ -874,7 +872,7 @@ class AlbertForPreTraining(AlbertPreTrainedModel):
             sequence_output, pooled_output = outputs[:2]
 
             prediction_scores = self.predictions(sequence_output)
-            seq_relationship_score = seq_relationship_score(pooled_output)
+            seq_relationship_score = self.help_loss_head(pooled_output)
 
             total_loss = None
             if labels is not None and next_sentence_label is not None:
@@ -898,6 +896,7 @@ class AlbertForPreTraining(AlbertPreTrainedModel):
         else:
             raise ValueError("Wrong value for AlbertForPreTraining.help_loss. Must be 'NSP' or 'SOP'. "
                              "Set the help_loss_function-Value in config.json")
+
 
 #######################################################################################################################
 #######################################################################################################################
