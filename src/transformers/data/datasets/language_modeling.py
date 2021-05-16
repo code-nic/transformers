@@ -200,34 +200,54 @@ class LineByLineWithSOPTextDataset(Dataset):
         assert os.path.isdir(file_dir)
         logger.info(f"Creating features from dataset file folder at {file_dir}")
         self.examples = []
-        # TODO: randomness could apply a random seed, ex. rng = random.Random(random_seed)
-        # file path looks like ./dataset/wiki_1, ./dataset/wiki_2
-        for file_name in os.listdir(file_dir):
-            file_path = os.path.join(file_dir, file_name)
-            assert os.path.isfile(file_path)
-            article_open = False
-            with open(file_path, encoding="utf-8") as f:
-                original_lines = f.readlines()
-                article_lines = []
-                for line in original_lines:
-                    if "<doc id=" in line:
-                        article_open = True
-                    elif "</doc>" in line:
-                        article_open = False
-                        document = [
-                            tokenizer.convert_tokens_to_ids(tokenizer.tokenize(line))
-                            for line in article_lines[1:]
-                            if (len(line) > 0 and not line.isspace())
-                        ]
 
-                        examples = self.create_examples_from_document(document, block_size, tokenizer)
-                        self.examples.extend(examples)
-                        article_lines = []
-                    else:
-                        if article_open:
-                            article_lines.append(line)
+        filename = "SOP_Save"
+        cached_features_file = os.path.join(
+            file_dir,
+            f"cached_nsp_{tokenizer.__class__.__name__}_{block_size}_{filename}",
+        )
 
-        logger.info("Dataset parse finished.")
+        if os.path.exists(cached_features_file):
+            start = time.time()
+            with open(cached_features_file, "rb") as handle:
+                self.examples = pickle.load(handle)
+            logger.info(
+                f"Loading features from cached file {cached_features_file} [took %.3f s]", time.time() - start
+            )
+        else:
+            # TODO: randomness could apply a random seed, ex. rng = random.Random(random_seed)
+            # file path looks like ./dataset/wiki_1, ./dataset/wiki_2
+            for file_name in os.listdir(file_dir):
+                file_path = os.path.join(file_dir, file_name)
+                assert os.path.isfile(file_path)
+                article_open = False
+                with open(file_path, encoding="utf-8") as f:
+                    original_lines = f.readlines()
+                    article_lines = []
+                    for line in original_lines:
+                        if "<doc id=" in line:
+                            article_open = True
+                        elif "</doc>" in line:
+                            article_open = False
+                            document = [
+                                tokenizer.convert_tokens_to_ids(tokenizer.tokenize(line))
+                                for line in article_lines[1:]
+                                if (len(line) > 0 and not line.isspace())
+                            ]
+
+                            examples = self.create_examples_from_document(document, block_size, tokenizer)
+                            self.examples.extend(examples)
+                            article_lines = []
+                        else:
+                            if article_open:
+                                article_lines.append(line)
+                start = time.time()
+                with open(cached_features_file, "wb") as handle:
+                    pickle.dump(self.examples, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                logger.info(
+                    f"Saving features into cached file {cached_features_file} [took {time.time() - start:.3f} s]"
+                )
+            logger.info("Dataset parse finished.")
 
     def create_examples_from_document(self, document, block_size, tokenizer, short_seq_prob=0.1):
         """Creates examples for a single document."""
