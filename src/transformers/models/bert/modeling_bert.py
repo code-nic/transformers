@@ -1000,7 +1000,20 @@ class BertModel(BertPreTrainedModel):
 ########################################class BertForPreTraining wurde verändert#######################################
 #######################################################################################################################
 #######################################################################################################################
-class BertSOPHead(nn.Module):
+class BertPreTrainingHeadsSOP(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.predictions = BertLMPredictionHead(config)
+        self.dropout = nn.Dropout(config.classifier_dropout_prob)
+        self.classifier = nn.Linear(config.hidden_size, config.num_labels)
+
+    def forward(self, sequence_output, pooled_output):
+        prediction_scores = self.predictions(sequence_output)
+        dropout_pooled_output = self.dropout(pooled_output)
+        logits = self.classifier(dropout_pooled_output)
+        return prediction_scores, logits
+
+"""class BertSOPHead(nn.Module):
     def __init__(self, config):
         super().__init__()
 
@@ -1010,7 +1023,7 @@ class BertSOPHead(nn.Module):
     def forward(self, pooled_output):
         dropout_pooled_output = self.dropout(pooled_output)
         logits = self.classifier(dropout_pooled_output)
-        return logits
+        return logits"""
 
 
 @add_start_docstrings(
@@ -1025,11 +1038,10 @@ class BertForPreTraining(BertPreTrainedModel):
         super().__init__(config)
 
         self.bert = BertModel(config)
-        self.cls = BertPreTrainingHeads(config)
+        self.cls = BertPreTrainingHeads(config) if config.help_loss_function == "NSP" else BertPreTrainingHeadsSOP(config)
 
         self.init_weights()
         self.help_loss = config.help_loss_function
-        self.config = config
 
     def get_output_embeddings(self):
         return self.cls.predictions.decoder
@@ -1124,8 +1136,6 @@ class BertForPreTraining(BertPreTrainedModel):
 
 
         elif self.help_loss == "SOP":
-            predictions = BertOnlyMLMHead(self.config)
-            sop_classifier = BertSOPHead(self.config)
 
             return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
@@ -1142,9 +1152,7 @@ class BertForPreTraining(BertPreTrainedModel):
             )
 
             sequence_output, pooled_output = outputs[:2]
-
-            prediction_scores = predictions(sequence_output)
-            sop_scores = sop_classifier(pooled_output)
+            prediction_scores, sop_scores = self.cls(sequence_output, pooled_output)
 
             total_loss = None
             if labels is not None and sentence_order_label is not None:
